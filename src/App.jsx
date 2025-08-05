@@ -1,395 +1,358 @@
 import React, { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
-import { format } from 'date-fns';
+import { createRoot } from 'react-dom/client';
 
-// A mock API function to simulate the back-end call to Gemini.
-// In a real app, this would be a secure API endpoint on your server.
-const mockGeminiPrediction = (data) => {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      // The response structure would be a JSON object from the back-end
-      // that has already parsed the Gemini response.
-      const mockApiResponse = {
-        possibleMarriageDate: 'October 2025 to March 2026',
-        possiblePartnerState: 'Based on astrological influences, the partner is likely to come from a state in the North-Eastern region, such as Assam or Meghalaya.',
-        shortDescription: 'Based on the planetary positions in your horoscope, a significant transit of Jupiter and Venus is occurring, which is very auspicious for marriage. The 7th house, which governs marriage, is strong and well-aspected, indicating a period of great potential for a committed relationship. The location of your partner is influenced by the position of Venus and the 7th lord in the 12th house from your natal Moon, suggesting a partner from a different region, possibly to the east or north-east of your place of birth.',
-        fullReportContent: 'This is a detailed, multi-page report content that would be used to generate a PDF. It includes: 1. Birth Chart Summary, 2. Planetary Positions, 3. Analysis of 7th house, 4. Dasha Analysis, 5. Transit Overview, 6. Marriage Time Window, 7. Likely States of Partner\'s Origin, 8. Suggestions. This content is a placeholder for the full response from the Gemini API.',
-      };
-      resolve(mockApiResponse);
-    }, 2000); // Simulate network delay
-  });
-};
-
-const Modal = ({ title, content, onClose }) => {
-  return createPortal(
-    <div className="fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-2xl p-8 max-w-xl w-full m-4 transform transition-transform duration-300 scale-95 hover:scale-100" onClick={(e) => e.stopPropagation()}>
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="text-2xl font-bold text-gray-800">{title}</h3>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-900 text-3xl">&times;</button>
-        </div>
-        <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">{content}</p>
-        <button
-          onClick={onClose}
-          className="mt-6 w-full py-3 px-6 bg-purple-600 hover:bg-purple-700 text-white font-semibold rounded-lg shadow-md transition-colors duration-300"
-        >
-          Close
-        </button>
-      </div>
-    </div>,
-    document.body
-  );
-};
-
+// This is the main component of our application.
 const App = () => {
-  const [page, setPage] = useState('predictionForm');
-  const [loading, setLoading] = useState(false);
-  const [modalContent, setModalContent] = useState(null);
-  const [isPaidUser, setIsPaidUser] = useState(false); // Simulates user state
-  const [isExistingUser, setIsExistingUser] = useState(false); // Simulates user state
-
+  // State variables for user inputs and application status
   const [formData, setFormData] = useState({
-    fullName: '',
-    dateOfBirth: '',
-    timeOfBirth: '',
-    placeOfBirth: '',
+    name: '',
+    birthDate: '',
+    birthTime: '',
+    birthPlace: '',
+    email: '',
+    gender: '', // New state for gender
   });
+  const [astrologyReading, setAstrologyReading] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [message, useStateMessage] = useState('');
+  const [showReportDownload, setShowReportDownload] = useState(false);
+  const [showReadingPopup, setShowReadingPopup] = useState(false); // New state for the pop-up
+  const [isRazorpayLoaded, setIsRazorpayLoaded] = useState(false);
 
-  const [resultData, setResultData] = useState(null);
-
-  // Simulates city autocomplete data
-  const citySuggestions = [
-    'New York, NY', 'Los Angeles, CA', 'Chicago, IL', 'Houston, TX',
-    'Phoenix, AZ', 'Philadelphia, PA', 'San Antonio, TX', 'San Diego, CA',
-    'Dallas, TX', 'San Jose, CA', 'Mumbai, Maharashtra, India', 'Delhi, Delhi, India',
-    'Bangalore, Karnataka, India', 'Kolkata, West Bengal, India', 'Chennai, Tamil Nadu, India'
-  ];
-  const [filteredCities, setFilteredCities] = useState([]);
-
+  // Load the Razorpay script dynamically and set the document title
   useEffect(() => {
-    // This effect runs on component mount to simulate an existing user state.
-    // In a real app, this would be determined by a user's session or token.
-    const storedUserData = localStorage.getItem('userProfile');
-    if (storedUserData) {
-      const userProfile = JSON.parse(storedUserData);
-      setFormData(userProfile.formData);
-      setResultData(userProfile.resultData);
-      setIsExistingUser(true);
-      setIsPaidUser(userProfile.isPaid);
+    // Set the document title
+    document.title = "From Horoscope";
 
-      // Check if the prediction date is within one month of the current date
-      // This is a simplified check for demonstration purposes.
-      const today = new Date();
-      const lastPredictionDate = new Date(userProfile.lastPredictionDate);
-      const diffInMonths = (today.getFullYear() - lastPredictionDate.getFullYear()) * 12 + today.getMonth() - lastPredictionDate.getMonth();
-      if (diffInMonths < 1) {
-        setPage('result');
-      } else {
-        setPage('predictionForm');
-      }
-    }
+    const script = document.createElement('script');
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.onload = () => {
+      console.log('Razorpay script loaded successfully.');
+      setIsRazorpayLoaded(true);
+    };
+    script.onerror = () => {
+      console.error('Failed to load Razorpay script.');
+    };
+    document.body.appendChild(script);
+
+    return () => {
+      document.body.removeChild(script);
+    };
   }, []);
 
+  // Handler for form input changes
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setFormData({ ...formData, [name]: value });
+    setFormData((prevData) => ({ ...prevData, [name]: value }));
+  };
 
-    // Autocomplete logic for Place of Birth
-    if (name === 'placeOfBirth' && value.length >= 3) {
-      const filtered = citySuggestions.filter(city =>
-        city.toLowerCase().startsWith(value.toLowerCase())
-      );
-      setFilteredCities(filtered);
-    } else {
-      setFilteredCities([]);
+  // Function to call the Gemini API and get the astrological reading
+  const getAstrologyReading = async () => {
+    // IMPORTANT: You must get your own API key from Google AI Studio.
+    // Paste your key inside the quotes below. For example: const apiKey = "AIza...";
+    const apiKey = "AIzaSyBp6mXrEoWHWAb57ulh8WXbfDLqA4asUwg"; 
+
+    if (!formData.name || !formData.birthDate || !formData.birthTime || !formData.birthPlace || !formData.gender) {
+      useStateMessage('Please fill in all birth details, including gender, to get the astrology reading.');
+      return;
     }
-  };
 
-  const handleCitySelect = (city) => {
-    setFormData({ ...formData, placeOfBirth: city });
-    setFilteredCities([]);
-  };
+    if (!apiKey) {
+      useStateMessage('Please add your Gemini API key to the code to enable this feature.');
+      return;
+    }
 
-  const handleSubmitPrediction = async (e) => {
-    e.preventDefault();
+    useStateMessage('Generating a personalized astrology reading with Gemini...');
     setLoading(true);
-    setResultData(null); // Clear previous results
+
+    // The new prompt now includes the gender field.
+    const prompt = `Based on the following birth details, provide a brief, poetic astrological reading about the individual's future romantic and marriage life. The reading should be based on common astrological interpretations, but be presented in a descriptive, narrative style. Avoid providing a specific date. Instead, suggest a general time frame (e.g., "in the coming years," "a period of growth," "after a major life change").
+
+    Name: ${formData.name}
+    Date of Birth: ${formData.birthDate}
+    Time of Birth: ${formData.birthTime}
+    Place of Birth: ${formData.birthPlace}
+    Gender: ${formData.gender}
+    
+    The response should be 2-3 short paragraphs and be a positive, insightful narrative.`;
 
     try {
-      // In a real application, a secure back-end endpoint would be called here.
-      // e.g., await fetch('/api/predict', { method: 'POST', body: JSON.stringify(formData) })
-      // We are using a mock function to simulate this.
-      const result = await mockGeminiPrediction(formData);
-      setResultData(result);
-      setPage('result');
+      const chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
+      const payload = { contents: chatHistory };
+      const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
 
-      // Simulating storing user data
-      const userProfile = {
-        formData,
-        resultData: result,
-        isPaid: isPaidUser,
-        lastPredictionDate: new Date().toISOString()
-      };
-      localStorage.setItem('userProfile', JSON.stringify(userProfile));
-      setIsExistingUser(true);
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        throw new Error(`API call failed with status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      const text = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+      
+      if (text) {
+        setAstrologyReading(text.trim());
+        useStateMessage('Your personalized reading is ready!');
+        setShowReadingPopup(true); // Open the pop-up
+      } else {
+        setAstrologyReading(null);
+        useStateMessage('Could not generate a reading. Please try again.');
+      }
     } catch (error) {
-      setModalContent('An error occurred while fetching the prediction. Please try again.');
+      console.error('Error calling Gemini API:', error);
+      useStateMessage('An error occurred while connecting to the AI model. Please check your API key and network connection.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleGetFullReport = () => {
-    // In a real application, this would redirect to a payment page.
-    setModalContent('You are now being redirected to the payment page via Razorpay. After a successful payment, the full report PDF will be sent to your email address.');
-    // Simulate a redirect and successful payment.
-    setTimeout(() => {
-      setIsPaidUser(true);
-      const userProfile = JSON.parse(localStorage.getItem('userProfile'));
-      userProfile.isPaid = true;
-      localStorage.setItem('userProfile', JSON.stringify(userProfile));
-      setModalContent('Payment successful! The full report will be sent to your email shortly. You can now download your report from the results page.');
-      setPage('result');
-    }, 2000);
-  };
-
-  const handleDownloadReport = () => {
-    if (resultData && isPaidUser) {
-      setModalContent('Simulating PDF download... In a real app, the server would generate and send the PDF.');
-    } else {
-      setModalContent('Please get the full report first to enable this feature.');
+  // Function to handle the Razorpay payment
+  const handlePayment = () => {
+    if (!isRazorpayLoaded) {
+      useStateMessage('Payment system not ready. Please wait a moment and try again.');
+      return;
     }
+    if (!formData.email) {
+      useStateMessage('Please enter your email to proceed with the payment.');
+      return;
+    }
+
+    useStateMessage('Initiating payment...');
+    
+    // NOTE: For a real application, the order ID should be created on a secure backend server.
+    // The amount should also be handled on the server to prevent manipulation.
+    // Here, we are simulating a client-side payment for demonstration.
+    const options = {
+      key: 'rzp_test_XXXXXXXXXXXXXXXX', // Replace with your actual Test Key
+      amount: '5100', // Amount in paisa. 5100 paisa = Rs. 51
+      currency: 'INR',
+      name: 'From Horoscope',
+      description: 'Detailed Astrology Report',
+      handler: function (response) {
+        // This function is called on successful payment.
+        console.log('Payment successful:', response);
+        useStateMessage('Payment successful! Your detailed report will be generated.');
+        
+        // This simulates sending the report. In a real scenario, this is where
+        // you would make a fetch call to your backend server to trigger
+        // the email and PDF generation process.
+        // For example:
+        // fetch('/api/send-report', { method: 'POST', body: JSON.stringify(formData) });
+        
+        setShowReportDownload(true);
+      },
+      prefill: {
+        name: formData.name,
+        email: formData.email,
+        contact: '', // Optional: user's phone number
+      },
+      notes: {
+        address: 'From Horoscope Office',
+      },
+      theme: {
+        color: '#3399cc',
+      },
+    };
+
+    // We must use `window.Razorpay` since the script is loaded dynamically.
+    const rzp1 = new window.Razorpay(options);
+    rzp1.open();
   };
 
-  const renderPredictionForm = () => (
-    <div className="flex-grow flex items-center justify-center p-4 min-h-screen">
-      <div className="bg-white bg-opacity-90 backdrop-filter backdrop-blur-lg rounded-3xl shadow-2xl p-8 sm:p-12 w-full max-w-lg transition-transform duration-500 transform hover:scale-105">
-        <h2 className="text-4xl font-extrabold text-center text-purple-700 mb-6">Marriage Prediction</h2>
-        <form onSubmit={handleSubmitPrediction} className="space-y-6">
-          <div className="relative">
-            <label htmlFor="fullName" className="block text-gray-700 font-semibold mb-2">Full Name</label>
+  // Function to generate and download a dummy PDF
+  const downloadReport = () => {
+    // This is a simple, mock function to show the download process.
+    // In a real app, you would fetch a pre-generated PDF from your backend.
+    
+    const reportContent = `
+From Horoscope Detailed Report
+
+Name: ${formData.name}
+Date of Birth: ${formData.birthDate}
+Time of Birth: ${formData.birthTime}
+Place of Birth: ${formData.birthPlace}
+Gender: ${formData.gender}
+
+Astrology Reading: 
+${astrologyReading || 'Not available'}
+
+This is a sample report. A full report would include detailed astrological charts and predictions.
+`;
+    const blob = new Blob([reportContent], { type: 'text/plain' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `horoscope_report_${formData.name.replace(/\s/g, '_')}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    useStateMessage('Report downloaded!');
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4 sm:p-6 font-sans">
+      <div className="w-full max-w-2xl bg-white rounded-lg shadow-lg p-6 sm:p-8 space-y-8">
+        <h1 className="text-3xl font-extrabold text-center text-gray-800">From Horoscope</h1>
+
+        <form className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+          <div>
+            <label htmlFor="name" className="block text-sm font-medium text-gray-700">Name</label>
             <input
               type="text"
-              id="fullName"
-              name="fullName"
-              value={formData.fullName}
+              id="name"
+              name="name"
+              value={formData.name}
               onChange={handleInputChange}
-              required
-              className="w-full p-4 border border-gray-300 rounded-xl focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-colors duration-300"
+              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2"
+              placeholder="Your Name"
             />
           </div>
           <div>
-            <label htmlFor="dateOfBirth" className="block text-gray-700 font-semibold mb-2">Date of Birth</label>
+            <label htmlFor="email" className="block text-sm font-medium text-gray-700">Email</label>
+            <input
+              type="email"
+              id="email"
+              name="email"
+              value={formData.email}
+              onChange={handleInputChange}
+              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2"
+              placeholder="your.email@example.com"
+            />
+          </div>
+          <div>
+            <label htmlFor="birthDate" className="block text-sm font-medium text-gray-700">Date of Birth</label>
             <input
               type="date"
-              id="dateOfBirth"
-              name="dateOfBirth"
-              value={formData.dateOfBirth}
+              id="birthDate"
+              name="birthDate"
+              value={formData.birthDate}
               onChange={handleInputChange}
-              required
-              className="w-full p-4 border border-gray-300 rounded-xl focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-colors duration-300"
+              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2"
             />
           </div>
           <div>
-            <label htmlFor="timeOfBirth" className="block text-gray-700 font-semibold mb-2">Time of Birth (AM/PM)</label>
+            <label htmlFor="birthTime" className="block text-sm font-medium text-gray-700">Time of Birth</label>
             <input
               type="time"
-              id="timeOfBirth"
-              name="timeOfBirth"
-              value={formData.timeOfBirth}
+              id="birthTime"
+              name="birthTime"
+              value={formData.birthTime}
               onChange={handleInputChange}
-              required
-              className="w-full p-4 border border-gray-300 rounded-xl focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-colors duration-300"
+              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2"
             />
           </div>
-          <div className="relative">
-            <label htmlFor="placeOfBirth" className="block text-gray-700 font-semibold mb-2">Place of Birth</label>
+          <div className="sm:col-span-2">
+            <label htmlFor="birthPlace" className="block text-sm font-medium text-gray-700">Place of Birth</label>
             <input
               type="text"
-              id="placeOfBirth"
-              name="placeOfBirth"
-              value={formData.placeOfBirth}
+              id="birthPlace"
+              name="birthPlace"
+              value={formData.birthPlace}
               onChange={handleInputChange}
-              required
-              autoComplete="off"
-              className="w-full p-4 border border-gray-300 rounded-xl focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-colors duration-300"
+              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm p-2"
+              placeholder="City, Country"
             />
-            {filteredCities.length > 0 && (
-              <ul className="absolute top-full left-0 right-0 bg-white border border-gray-300 rounded-xl shadow-lg z-10 max-h-48 overflow-y-auto mt-2">
-                {filteredCities.map((city, index) => (
-                  <li
-                    key={index}
-                    onClick={() => handleCitySelect(city)}
-                    className="p-3 cursor-pointer hover:bg-gray-100 transition-colors duration-200"
-                  >
-                    {city}
-                  </li>
-                ))}
-              </ul>
-            )}
           </div>
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-4 px-6 bg-purple-600 text-white font-bold text-lg rounded-xl shadow-lg hover:bg-purple-700 transition-colors duration-300 disabled:bg-gray-400"
-          >
-            {loading ? (
-              <div className="flex items-center justify-center">
-                <svg className="animate-spin h-5 w-5 text-white mr-3" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                Predicting...
-              </div>
-            ) : 'Submit'}
-          </button>
+          <div className="sm:col-span-2">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Gender</label>
+            <div className="flex items-center space-x-4">
+              <label htmlFor="gender-male" className="flex items-center">
+                <input
+                  type="radio"
+                  id="gender-male"
+                  name="gender"
+                  value="Male"
+                  checked={formData.gender === 'Male'}
+                  onChange={handleInputChange}
+                  className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300"
+                />
+                <span className="ml-2 text-sm text-gray-700">Male</span>
+              </label>
+              <label htmlFor="gender-female" className="flex items-center">
+                <input
+                  type="radio"
+                  id="gender-female"
+                  name="gender"
+                  value="Female"
+                  checked={formData.gender === 'Female'}
+                  onChange={handleInputChange}
+                  className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300"
+                />
+                <span className="ml-2 text-sm text-gray-700">Female</span>
+              </label>
+            </div>
+          </div>
         </form>
-      </div>
-    </div>
-  );
 
-  const renderResultPage = () => (
-    <div className="flex-grow flex items-center justify-center p-4 min-h-screen">
-      <div className="bg-white bg-opacity-90 backdrop-filter backdrop-blur-lg rounded-3xl shadow-2xl p-8 sm:p-12 w-full max-w-lg transition-transform duration-500 transform hover:scale-105">
-        <h2 className="text-4xl font-extrabold text-center text-purple-700 mb-6">Your Prediction Result</h2>
-        {resultData ? (
-          <div className="space-y-6 text-gray-700">
-            <div>
-              <h3 className="text-2xl font-bold text-gray-800">Possible Marriage Date</h3>
-              <p className="text-lg mt-2">{resultData.possibleMarriageDate}</p>
-            </div>
-            <div>
-              <h3 className="text-2xl font-bold text-gray-800">Possible Partner's State</h3>
-              <p className="text-lg mt-2">{resultData.possiblePartnerState}</p>
-            </div>
-            <div>
-              <h3 className="text-2xl font-bold text-gray-800">Description</h3>
-              <p className="text-lg mt-2 leading-relaxed">{resultData.shortDescription}</p>
-            </div>
-            {isPaidUser ? (
-              <button
-                onClick={handleDownloadReport}
-                className="w-full py-4 px-6 bg-purple-600 text-white font-bold text-lg rounded-xl shadow-lg hover:bg-purple-700 transition-colors duration-300"
-              >
-                Download Report
-              </button>
-            ) : (
-              <button
-                onClick={handleGetFullReport}
-                className="w-full py-4 px-6 bg-purple-600 text-white font-bold text-lg rounded-xl shadow-lg hover:bg-purple-700 transition-colors duration-300"
-              >
-                Get Full Report
-              </button>
-            )}
+        <div className="flex flex-col sm:flex-row gap-4 justify-center">
+          <button
+            onClick={getAstrologyReading}
+            disabled={loading}
+            className="w-full sm:w-auto px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+          >
+            {loading ? 'Generating...' : 'Get Astrology Reading'}
+          </button>
+          
+          <button
+            onClick={handlePayment}
+            disabled={!isRazorpayLoaded}
+            className="w-full sm:w-auto px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
+          >
+            Get Detailed Report (₹51)
+          </button>
+        </div>
+
+        {message && (
+          <div className="mt-6 p-4 rounded-md text-center bg-blue-50 border-l-4 border-blue-400">
+            <p className="text-sm text-blue-700">{message}</p>
+          </div>
+        )}
+
+        {showReportDownload && (
+          <div className="mt-6 flex flex-col items-center justify-center">
+            <h2 className="text-xl font-semibold text-gray-800">Report Ready!</h2>
+            <p className="mt-2 text-gray-600 text-center">Your detailed report is ready for download.</p>
             <button
-              onClick={() => setPage('predictionForm')}
-              className="w-full py-4 px-6 mt-4 border border-purple-600 text-purple-600 font-bold text-lg rounded-xl hover:bg-purple-50 transition-colors duration-300"
+              onClick={downloadReport}
+              className="mt-4 px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
             >
-              Go Back
+              Download Report
             </button>
           </div>
-        ) : (
-          <div className="text-center text-gray-500">
-            <p>No prediction data found. Please submit the form to get a result.</p>
-            <button
-              onClick={() => setPage('predictionForm')}
-              className="mt-6 py-3 px-6 border border-purple-600 text-purple-600 font-bold text-lg rounded-xl hover:bg-purple-50 transition-colors duration-300"
-            >
-              Go Back to Form
-            </button>
+        )}
+
+        {/* The pop-up window for the astrology reading */}
+        {showReadingPopup && (
+          <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full flex items-center justify-center">
+            <div className="relative p-8 w-full max-w-md mx-auto bg-white rounded-lg shadow-lg">
+              <button
+                onClick={() => setShowReadingPopup(false)}
+                className="absolute top-2 right-2 text-gray-400 hover:text-gray-600 text-2xl font-bold"
+              >
+                &times;
+              </button>
+              <div className="text-center">
+                <h2 className="text-xl font-semibold text-gray-800">Your Astrology Reading</h2>
+                <div className="mt-4 p-4 rounded-md bg-yellow-50 border-l-4 border-yellow-400">
+                  <p className="text-sm font-medium text-yellow-700">Your Reading:</p>
+                  <p className="mt-1 text-lg font-normal text-yellow-800 whitespace-pre-wrap">{astrologyReading}</p>
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </div>
     </div>
   );
-
-  const renderMuhurathForm = () => (
-    <div className="flex-grow flex items-center justify-center p-4 min-h-screen">
-      <div className="bg-white bg-opacity-90 backdrop-filter backdrop-blur-lg rounded-3xl shadow-2xl p-8 sm:p-12 w-full max-w-4xl transition-transform duration-500 transform hover:scale-105">
-        <h2 className="text-4xl font-extrabold text-center text-purple-700 mb-6">Muhurath Form</h2>
-        <div className="flex flex-col md:flex-row gap-8">
-          {/* Male Column */}
-          <div className="flex-1 space-y-6">
-            <h3 className="text-2xl font-bold text-gray-800 text-center">Male</h3>
-            <div>
-              <label htmlFor="maleFullName" className="block text-gray-700 font-semibold mb-2">Full Name</label>
-              <input type="text" id="maleFullName" name="maleFullName" required className="w-full p-4 border border-gray-300 rounded-xl focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-colors duration-300" />
-            </div>
-            <div>
-              <label htmlFor="maleDateOfBirth" className="block text-gray-700 font-semibold mb-2">Date of Birth</label>
-              <input type="date" id="maleDateOfBirth" name="maleDateOfBirth" required className="w-full p-4 border border-gray-300 rounded-xl focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-colors duration-300" />
-            </div>
-            <div>
-              <label htmlFor="maleTimeOfBirth" className="block text-gray-700 font-semibold mb-2">Time of Birth (AM/PM)</label>
-              <input type="time" id="maleTimeOfBirth" name="maleTimeOfBirth" required className="w-full p-4 border border-gray-300 rounded-xl focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-colors duration-300" />
-            </div>
-            <div className="relative">
-              <label htmlFor="malePlaceOfBirth" className="block text-gray-700 font-semibold mb-2">Place of Birth</label>
-              <input type="text" id="malePlaceOfBirth" name="malePlaceOfBirth" required autoComplete="off" className="w-full p-4 border border-gray-300 rounded-xl focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-colors duration-300" />
-            </div>
-          </div>
-          {/* Female Column */}
-          <div className="flex-1 space-y-6">
-            <h3 className="text-2xl font-bold text-gray-800 text-center">Female</h3>
-            <div>
-              <label htmlFor="femaleFullName" className="block text-gray-700 font-semibold mb-2">Full Name</label>
-              <input type="text" id="femaleFullName" name="femaleFullName" required className="w-full p-4 border border-gray-300 rounded-xl focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-colors duration-300" />
-            </div>
-            <div>
-              <label htmlFor="femaleDateOfBirth" className="block text-gray-700 font-semibold mb-2">Date of Birth</label>
-              <input type="date" id="femaleDateOfBirth" name="femaleDateOfBirth" required className="w-full p-4 border border-gray-300 rounded-xl focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-colors duration-300" />
-            </div>
-            <div>
-              <label htmlFor="femaleTimeOfBirth" className="block text-gray-700 font-semibold mb-2">Time of Birth (AM/PM)</label>
-              <input type="time" id="femaleTimeOfBirth" name="femaleTimeOfBirth" required className="w-full p-4 border border-gray-300 rounded-xl focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-colors duration-300" />
-            </div>
-            <div className="relative">
-              <label htmlFor="femalePlaceOfBirth" className="block text-gray-700 font-semibold mb-2">Place of Birth</label>
-              <input type="text" id="femalePlaceOfBirth" name="femalePlaceOfBirth" required autoComplete="off" className="w-full p-4 border border-gray-300 rounded-xl focus:border-purple-500 focus:ring-1 focus:ring-purple-500 transition-colors duration-300" />
-            </div>
-          </div>
-        </div>
-        <button
-          onClick={() => setModalContent('This form would submit data for a joint prediction (Muhurath) to a back-end service.')}
-          className="w-full mt-8 py-4 px-6 bg-purple-600 text-white font-bold text-lg rounded-xl shadow-lg hover:bg-purple-700 transition-colors duration-300"
-        >
-          Submit for Muhurath
-        </button>
-        <button
-          onClick={() => setPage('predictionForm')}
-          className="w-full py-4 px-6 mt-4 border border-purple-600 text-purple-600 font-bold text-lg rounded-xl hover:bg-purple-50 transition-colors duration-300"
-        >
-          Back to Prediction
-        </button>
-      </div>
-    </div>
-  );
-
-  return (
-    <div className="min-h-screen font-sans antialiased text-gray-800 bg-gradient-to-br from-indigo-100 via-purple-100 to-pink-100 flex flex-col">
-      <div className="container mx-auto p-4 flex-grow flex flex-col">
-        <header className="flex justify-center md:justify-between items-center py-6 px-4">
-          <h1 className="text-3xl font-bold text-purple-800 transition-transform duration-300 hover:scale-110">
-            AstroPredict
-          </h1>
-          <nav className="hidden md:flex space-x-6 text-lg font-semibold">
-            <button onClick={() => setPage('predictionForm')} className="text-purple-600 hover:text-purple-800 transition-colors duration-300">
-              Prediction
-            </button>
-            <button onClick={() => setPage('muhurathForm')} className="text-purple-600 hover:text-purple-800 transition-colors duration-300">
-              Muhurath
-            </button>
-          </nav>
-        </header>
-
-        {page === 'predictionForm' && renderPredictionForm()}
-        {page === 'result' && renderResultPage()}
-        {page === 'muhurathForm' && renderMuhurathForm()}
-
-      </div>
-      {modalContent && <Modal title="Information" content={modalContent} onClose={() => setModalContent(null)} />}
-    </div>
-  );
 };
+
+// We use createRoot to render the App component into the root DOM element.
+const container = document.getElementById('root');
+const root = createRoot(container);
+root.render(<App />);
+
 
 export default App;
